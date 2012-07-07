@@ -49,6 +49,7 @@ class Utils:
 
 meta = {}
 meta["botname"]  = "MafBot"
+meta["ircname"]  = "Nisani"
 meta["data"]     = ""
 meta["message"]  = ""
 meta["user"]     = ""
@@ -110,25 +111,7 @@ def info_(*arg):
 def join_(*arg):
     meta["sock"].send(''.join(["JOIN %s\r\n" % channel for channel in arg if channel.startswith("#")]))
     Utils.glub()
-def spitquote_(*arg):
-    if len(arg) == 0:
-        Utils.spit_quote({"p":"random"})
-    else:
-        params = arg[0].lstrip("#")
-        Utils.spit_quote(params)     
-def quote_(*arg):
-    """Works with QdbS. You may modify this function to get it to work with other sites using QdbS by simply changing the URL."""
-    if len(arg) >= 1:
-        quote = ' '.join(arg)
-        params = urllib.urlencode({"do":"add", "quote":quote})
-        #Change the following URL to change the quote submission destination
-        q = urllib.urlopen("http://awfulnet.org/quotes/index.php", params)
-        q.close()
-        Utils.glub()
-def quotebegin_(*arg):
-    """Similar to `quote_` but used for multiline quotes."""
-    meta["blockquoters"][meta["user"]] = ""
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "spitquote":spitquote_, "quote":quote_, "quotebegin":quotebegin_}
+commands = {"add":add_, "help":help_, "info":info_, "join":join_}
 #COMMANDS
 ##########
 
@@ -141,7 +124,7 @@ except:
 print("\nConnection established with %s on port 6667." % meta["server"])
 
 #Change nickname
-meta["sock"].send("USER %s 0 * :%s\r\nNICK %s\r\n" % (meta["botname"], os.getlogin(), meta["botname"]))
+meta["sock"].send("USER %s 0 * :%s\r\nNICK %s\r\n" % (meta["botname"], meta["ircname"], meta["botname"]))
 #Main loop
 while (1):
     try:

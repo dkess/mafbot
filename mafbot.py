@@ -48,7 +48,7 @@ class Utils:
                 Utils.notify_user(meta["user"], line.lstrip().rstrip().replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&nbsp;", "  "))
 
 meta = {}
-meta["botname"]  = "Gil"
+meta["botname"]  = "MafBot"
 meta["data"]     = ""
 meta["message"]  = ""
 meta["user"]     = ""
@@ -170,9 +170,9 @@ while (1):
                     Utils.respond("Glub... (Quote discarded, too long)")
                 else:
                     meta["blockquoters"][meta["user"]] += ' '.join(meta["message"])+'\n'
-            elif meta["message"][0].lower().startswith(meta["botname"].lower()):
+            elif meta["message"][0].lower().startswith('!'):
                 try:
-                    commands[meta["message"][1].lower()](*meta["message"][2:])
+                    commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:
                     Utils.respond(["Glub?", "Glubbuby Glubbub?"][randint(0,1)])
         elif (meta["data"].split(' ')[1] == "JOIN"):

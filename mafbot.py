@@ -89,18 +89,6 @@ def help_(*arg):
         Utils.notify_user(meta["user"], "Command `info <user>`: Displays personal info for <user>.")
     if target == "join":
         Utils.notify_user(meta["user"], "Command `join <#channel> [#channel] [#channel]...`: Tells %s to join all of the listed channels.")
-    if target == "spitquote":
-        Utils.notify_user(meta["user"], "Command `spitquote [quoteID]`: Spits out a random quote. If [quoteID] is provided, spits out the indicated quote.")
-    if target == "quote":
-        Utils.notify_user(meta["user"], "Command `quote <quote>`: Submits <quote> to the Awfulnet QDB ("+meta["quotedburl"]+").")
-    if target == "quotebegin":
-        Utils.notify_user(meta["user"], "Command `quotebegin`")
-        Utils.notify_user(meta["user"], "Example:")
-        Utils.notify_user(meta["user"], "gil quotebegin")
-        Utils.notify_user(meta["user"], "<quote line 1>")
-        Utils.notify_user(meta["user"], "<quote line 2>")
-        Utils.notify_user(meta["user"], "quoteend")
-        Utils.notify_user(meta["user"], "Submits a multiline quote to the Awfulnet QDB ("+meta["quotedburl"]+"). If you mess up, replace \"quoteend\" with \"quotediscard\" and start over.")
 def info_(*arg):
     if len(arg) != 0:
         who = arg[0].lower()

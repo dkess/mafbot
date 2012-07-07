@@ -158,8 +158,5 @@ while (1):
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:
                     Utils.respond(["Glub?", "Glubbuby Glubbub?"][randint(0,1)])
-        elif (meta["data"].split(' ')[1] == "JOIN"):
-            meta["user"] = Utils.get_username(meta["data"])
-            Utils.notify_user(meta["user"], "Hi, %s! Welcome to %s!" % (meta["user"], meta["data"].rstrip().split(' ')[2][1:]))
     except:
         pass

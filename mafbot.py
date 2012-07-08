@@ -1,10 +1,6 @@
 #!/usr/bin/env python
-##
-#Gil IRC Bot
-##
-#Copyright (C) 2012 by Carter Hinsley
-#All Rights Reserved.
-##
+# MafBot by Nisani
+
 import os
 import sys
 import time
@@ -30,6 +26,12 @@ class Utils:
     def respond(cls, message):
         meta["sock"].send("PRIVMSG %s :%s: %s\r\n" % (meta["data"].split(' ')[2], meta["user"], message))
         print("Said: \"%s\"" % message)
+    @classmethod
+    def say(cls, message):
+        meta["sock"].send("PRIVMSG %s :%s\r\n" % (meta["data"].split(' ')[2],message))
+
+class Player:
+    pass
 
 meta = {}
 meta["botname"]  = "MafBot"
@@ -44,7 +46,7 @@ meta["channels"] = sys.argv[2:]
 meta["blockquoters"] = {}
 meta["userinfo"] = {}
 
-players = []
+players = {}
 
 ###############
 # Game states:
@@ -93,12 +95,52 @@ def info_(*arg):
 def join_(*arg):
     # only add them to the player list if there is not a current game going on
     if meta["gamestate"] == 0:
-        Utils.respond(meta["user"] + " has joined the game")
-        players.append(meta["user"])
+        if meta["user"] in players:
+            Utils.say(meta["user"] + ", you are already in the game!")
+        else:
+            print meta["user"], "has been added"
+            Utils.say(meta["user"] + " has joined the game")
+            players[meta["user"]] = Player()
+            meta["sock"].send("MODE %s +v %s\r\n" % (meta["data"].split(' ')[2],meta["user"]))
 
 def players_(*arg):
-    Utils.respond(" ".join(players))
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_}
+    Utils.respond(" ".join(players.keys()))
+
+voters = set()
+min_voters = 2
+min_players = 4
+def start_(*arg):
+    if(len(players) < min_players):
+        Utils.say("You need at least 5 players to start a game!")
+    else:
+        voters.add(meta["user"])
+        if len(voters) < min_voters:
+            voters.add(meta["user"])
+            Utils.say("%s wants to start, need %d more people" % (meta["user"],min_voters - len(voters)))
+        else:
+            Utils.say("Game is now starting!")
+            Utils.say("Alerting players: %s" % " ".join(players.keys()))
+            meta["sock"].send("MODE %s +m\r\n" % (meta["data"].split(' ')[2]))
+            # Send out role PMs
+            for p in list(enumerate(random.shuffle(players.keys()))):
+                if p[0] == 0:
+                    players[p[1]].role = "Goon"
+                    players[p[1]].alignment = "m"
+                    Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
+                else:
+                    players[p[1]].role = "Townie"
+                    players[p[1]].role = "t"
+                    Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
+
+def admineval(*arg):
+    if meta["user"] == "nisani":
+        Utils.say(eval(arg[0]))
+
+def adminexec(*arg):
+    print "executing", arg[0]
+    exec arg[0]
+
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec}
 #COMMANDS
 ##########
 
@@ -124,6 +166,7 @@ while (1):
             meta["sock"].send("PONG "+meta["data"][meta["data"].find("\nPING ")+7:]+"\r\n")
         if (meta["data"].split(' ')[1] == "001"):
             meta["sock"].send("MODE "+meta["botname"]+" +B\r\n"+''.join(["JOIN %s\r\n" % channel for channel in meta["channels"]]))
+            meta["sock"].send("PRIVMSG nickserv :identify pass\r\n")
         #If receiving PRIVMSG from a user
         if (meta["data"].split(' ')[1] == "PRIVMSG"):
             meta["user"] = Utils.get_username(meta["data"])
@@ -145,5 +188,15 @@ while (1):
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:
                     Utils.respond(["Glub?", "Glubbuby Glubbub?"][randint(0,1)])
+        # if a user changes nick
+        if (meta["data"].split(' ')[1] == "NICK"):
+            print "detected nick change"
+            try:
+                players.remove(Utils.get_username(meta["data"]))
+                print "adding player"
+                players.add(meta["data"].split(' ')[2][1:])
+            # If the player isn't in the playerlist, do nothing
+            except KeyError:
+                Utils.say("player not in game")
     except:
         pass

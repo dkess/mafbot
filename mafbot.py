@@ -30,9 +30,13 @@ class Utils:
 class Player:
     pass
 
+pwfile = open('./nickserv_passwd')
+
+
 meta = {}
 meta["botname"]  = "MafBot"
 meta["ircname"]  = "Nisani"
+meta["passwd"]   = pwfile.read()
 meta["data"]     = ""
 meta["message"]  = ""
 meta["user"]     = ""
@@ -42,6 +46,8 @@ meta["sock"]     = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 meta["channel"] = sys.argv[2]
 meta["blockquoters"] = {}
 meta["userinfo"] = {}
+
+pwfile.closed
 
 players = {}
 
@@ -189,7 +195,7 @@ while (1):
             meta["sock"].send("PONG "+meta["data"][meta["data"].find("\nPING ")+7:]+"\r\n")
         if (meta["data"].split(' ')[1] == "001"):
             meta["sock"].send("MODE "+meta["botname"]+" +B\r\n"+''.join(["JOIN %s\r\n" % meta["channel"]]))
-            meta["sock"].send("PRIVMSG nickserv :identify PASSWORD\r\n")
+            meta["sock"].send("PRIVMSG nickserv :identify %s\r\n" % meta["passwd"])
         #If receiving PRIVMSG from a user
         if (meta["data"].split(' ')[1] == "PRIVMSG"):
             meta["user"] = Utils.get_username(meta["data"])

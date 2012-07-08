@@ -6,7 +6,7 @@ import sys
 import time
 import socket
 import urllib
-from random import randint
+import random
 
 if (len(sys.argv) == 1):
     print("No server specified.")
@@ -54,6 +54,7 @@ players = {}
 # 1 - Day
 # 2 - Night
 meta["gamestate"] = 0
+meta["cycle"] = 0
 
 #Load users
 for user in [f for f in os.listdir("./") if os.path.isfile(os.path.join("./", f)) and f.endswith(".user")]:
@@ -106,6 +107,28 @@ def join_(*arg):
 def players_(*arg):
     Utils.respond(" ".join(players.keys()))
 
+def changegame(state):
+    meta["gamestate"] = state
+    if state == 1:
+        for p in players.keys():
+            if players[p].alive == 1:
+                meta["sock"].send("MODE %s +v %s\r\n" % (meta["data"].split(' ')[2],p))
+            elif players[p].alive == -1:
+                Utils.say("%s has died!" % p)
+                players[p].alive = 0
+        meta["cycle"] += 1
+        Utils.say("It is now Day %d." % meta["cycle"])
+    if state == 2:
+        for p in players.keys():
+            meta["sock"].send("MODE %s -v %s\r\n" % (meta["data"].split(' ')[2],p))
+        Utils.say("It is now Night %d." % meta["cycle"])
+
+def endgame():
+    meta["gamestate"] = 0
+    meta["sock"].send("MODE %s -m\r\n" % meta["data"].split(' ')[2])
+    for p in players.keys():
+        meta["sock"].send("MDOE %s -v %s\r\n" % (meta["data"].split(' ')[2],p))
+
 voters = set()
 min_voters = 2
 min_players = 4
@@ -120,9 +143,11 @@ def start_(*arg):
         else:
             Utils.say("Game is now starting!")
             Utils.say("Alerting players: %s" % " ".join(players.keys()))
-            meta["sock"].send("MODE %s +m\r\n" % (meta["data"].split(' ')[2]))
+            meta["sock"].send("MODE %s +m\r\n" % meta["data"].split(' ')[2])
+            playernames = players.keys()
+            random.shuffle(playernames)
             # Send out role PMs
-            for p in list(enumerate(random.shuffle(players.keys()))):
+            for p in list(enumerate(playernames)):
                 if p[0] == 0:
                     players[p[1]].role = "Goon"
                     players[p[1]].alignment = "m"
@@ -131,6 +156,8 @@ def start_(*arg):
                     players[p[1]].role = "Townie"
                     players[p[1]].role = "t"
                     Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
+                players[p[1]].alive = 1
+            changegame(2)
 
 def admineval(*arg):
     if meta["user"] == "nisani":
@@ -166,7 +193,7 @@ while (1):
             meta["sock"].send("PONG "+meta["data"][meta["data"].find("\nPING ")+7:]+"\r\n")
         if (meta["data"].split(' ')[1] == "001"):
             meta["sock"].send("MODE "+meta["botname"]+" +B\r\n"+''.join(["JOIN %s\r\n" % channel for channel in meta["channels"]]))
-            meta["sock"].send("PRIVMSG nickserv :identify pass\r\n")
+            meta["sock"].send("PRIVMSG nickserv :identify PASSWORD\r\n")
         #If receiving PRIVMSG from a user
         if (meta["data"].split(' ')[1] == "PRIVMSG"):
             meta["user"] = Utils.get_username(meta["data"])
@@ -187,7 +214,7 @@ while (1):
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:
-                    Utils.respond(["Glub?", "Glubbuby Glubbub?"][randint(0,1)])
+                    pass
         # if a user changes nick
         if (meta["data"].split(' ')[1] == "NICK"):
             print "detected nick change"

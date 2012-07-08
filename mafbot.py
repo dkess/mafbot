@@ -17,9 +17,6 @@ class Utils:
     def get_username(cls, message):
         return message[1:message.find("!")].lower()
     @classmethod
-    def glub(cls):
-        Utils.respond(["Glub.", "Glubbub Glub.", "Glubbety Glubbuby Glub.", "Glub Glubbety."][randint(0,3)])
-    @classmethod
     def notify_user(cls, user, message):
         meta["sock"].send("NOTICE %s :%s\r\n" % (user, message))
     @classmethod
@@ -42,7 +39,7 @@ meta["user"]     = ""
 meta["quotedburl"] = "http://awfulnet.org/quotes/index.php"
 meta["server"]   = sys.argv[1]
 meta["sock"]     = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-meta["channels"] = sys.argv[2:]
+meta["channel"] = sys.argv[2]
 meta["blockquoters"] = {}
 meta["userinfo"] = {}
 
@@ -71,7 +68,6 @@ def add_(*arg):
         f.write(info)
         f.close()
         meta["userinfo"][meta["user"].lower()] = info
-        Utils.glub()
 def help_(*arg):
     if len(arg) == 0:
         Utils.respond("Commands: %s" % ', '.join([x for x in commands]))
@@ -175,7 +171,7 @@ commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": pla
 try:
     meta["sock"].connect((meta["server"], 6667))
 except:
-    print("\nERROR: Connection could not be established.")
+    print("\nERROR: Connection to %s could not be established." % meta["server"])
     exit()
 print("\nConnection established with %s on port 6667." % meta["server"])
 
@@ -192,7 +188,7 @@ while (1):
         if ("\nPING " in meta["data"]):
             meta["sock"].send("PONG "+meta["data"][meta["data"].find("\nPING ")+7:]+"\r\n")
         if (meta["data"].split(' ')[1] == "001"):
-            meta["sock"].send("MODE "+meta["botname"]+" +B\r\n"+''.join(["JOIN %s\r\n" % channel for channel in meta["channels"]]))
+            meta["sock"].send("MODE "+meta["botname"]+" +B\r\n"+''.join(["JOIN %s\r\n" % meta["channel"]]))
             meta["sock"].send("PRIVMSG nickserv :identify PASSWORD\r\n")
         #If receiving PRIVMSG from a user
         if (meta["data"].split(' ')[1] == "PRIVMSG"):
@@ -202,12 +198,6 @@ while (1):
                 if meta["message"][0] == "quoteend":
                     quote_(meta["blockquoters"][meta["user"]])
                     del meta["blockquoters"][meta["user"]]
-                elif meta["message"][0] == "quotediscard":
-                    del meta["blockquoters"][meta["user"]]
-                    Utils.respond("Glub...")
-                elif meta["blockquoters"][meta["user"]].count("\n") == 12:
-                    del meta["blockquoters"][meta["user"]]
-                    Utils.respond("Glub... (Quote discarded, too long)")
                 else:
                     meta["blockquoters"][meta["user"]] += ' '.join(meta["message"])+'\n'
             elif meta["message"][0].lower().startswith('!'):

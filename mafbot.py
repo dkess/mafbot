@@ -30,22 +30,6 @@ class Utils:
     def respond(cls, message):
         meta["sock"].send("PRIVMSG %s :%s: %s\r\n" % (meta["data"].split(' ')[2], meta["user"], message))
         print("Said: \"%s\"" % message)
-    @classmethod
-    def spit_quote(cls, params):
-        if isinstance(params, dict):
-            params = urllib.urlencode(params)
-        q = urllib.urlopen(meta["quotedburl"]+"?%s" % params)
-        tmp = q.read()
-        q.close()
-        tmp_i = tmp.find("<p class=\"quote\">")
-        tmp = tmp[tmp_i:tmp.find("</p>", tmp_i)]
-        quote = tmp[tmp.find("<br />")+6:].replace("\n", "").split("<br />")
-        if quote == [""]:
-            Utils.notify_user(meta["user"], "Invalid quote index.")
-        else:
-            Utils.notify_user(meta["user"], "Quote %s:" % tmp[tmp.find("<u>")+3:tmp.find("</u>")])
-            for line in quote:
-                Utils.notify_user(meta["user"], line.lstrip().rstrip().replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&nbsp;", "  "))
 
 meta = {}
 meta["botname"]  = "MafBot"
@@ -59,6 +43,16 @@ meta["sock"]     = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 meta["channels"] = sys.argv[2:]
 meta["blockquoters"] = {}
 meta["userinfo"] = {}
+
+players = []
+
+###############
+# Game states:
+# 0 - No game
+# 1 - Day
+# 2 - Night
+meta["gamestate"] = 0
+
 #Load users
 for user in [f for f in os.listdir("./") if os.path.isfile(os.path.join("./", f)) and f.endswith(".user")]:
     f = open("./%s" % user)
@@ -97,9 +91,14 @@ def info_(*arg):
         else:
             Utils.notify_user(meta["user"], "Invalid target \"%s\"." % who)
 def join_(*arg):
-    meta["sock"].send(''.join(["JOIN %s\r\n" % channel for channel in arg if channel.startswith("#")]))
-    Utils.glub()
-commands = {"add":add_, "help":help_, "info":info_, "join":join_}
+    # only add them to the player list if there is not a current game going on
+    if meta["gamestate"] == 0:
+        Utils.respond(meta["user"] + " has joined the game")
+        players.append(meta["user"])
+
+def players_(*arg):
+    Utils.respond(" ".join(players))
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_}
 #COMMANDS
 ##########
 

@@ -248,8 +248,12 @@ while (1):
                                 meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
                 elif meta["gamestate"] == 1:
                     if meta["message"][0][1:].lower() == 'vote':
+                        # Votes must be done in-channel-- no PMing
                         if meta["data"].split(' ')[2][0] == '#':
                             try:
+                                for p in players.keys():
+                                    # Remove any previous vote the player made
+                                    players[p].voters.discard(meta["user"])
                                 players[meta["message"][1]].voters.add(meta["user"])
                             except:
                                 Utils.say(sys.exc_info())

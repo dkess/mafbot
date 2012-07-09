@@ -136,22 +136,21 @@ def changegame(state):
     if state == 1:
         for p in players.keys():
             if players[p].alive == 1:
-                meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"],p))
+                playerstring = ' ' + p
             elif players[p].alive < 0:
                 Utils.say("%s has died!" % p)
                 players[p].alive = 0
+        meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(playerstring.split(' '))-1),playerstring))
         meta["cycle"] += 1
         Utils.say("It is now Day %d." % meta["cycle"])
     if state == 2:
-        for p in players.keys():
-            meta["sock"].send("MODE %s -v %s\r\n" % (meta["channel"],p))
+        meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"],'v'*len(players),' '.join(players.keys())))
         Utils.say("It is now Night %d." % meta["cycle"])
 
 def endgame():
     meta["gamestate"] = 0
     meta["sock"].send("MODE %s -m\r\n" % meta["channel"])
-    for p in players.keys():
-        meta["sock"].send("MDOE %s -v %s\r\n" % (meta["channel"],p))
+    meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"],'v'*len(players),' '.join(players.keys())))
     players = {}
 
 voters = set()

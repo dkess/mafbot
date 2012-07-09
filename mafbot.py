@@ -29,7 +29,8 @@ class Utils:
 
 class Player:
     target = ''
-    voters = set()
+    def __init__(self):
+        self.voters = set()
 
 pwfile = open('./nickserv_passwd')
 

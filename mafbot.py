@@ -199,7 +199,10 @@ def adminexec(*arg):
     print "executing", arg[0]
     exec ' '.join(list(arg))
 
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_}
+def vote_(*arg):
+    pass
+
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_}
 #COMMANDS
 ##########
 
@@ -246,11 +249,9 @@ while (1):
                     if meta["message"][0][1:].lower() == 'vote':
                         if meta["data"].split(' ')[2][0] == '#':
                             try:
-                                player[meta["message"][1]].voters(add(meta["user"]))
+                                players[meta["message"][1]].voters.add(meta["user"])
                             except:
-                                #Utils.say("player does not exist")
-                                e = sys.exc_info()[0]
-                                Utils.say(e)
+                                Utils.say(sys.exc_info())
 
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])

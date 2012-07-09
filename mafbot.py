@@ -25,7 +25,7 @@ class Utils:
         print("Said: \"%s\"" % message)
     @classmethod
     def say(cls, message):
-        meta["sock"].send("PRIVMSG %s :%s\r\n" % (meta["data"].split(' ')[2],message))
+        meta["sock"].send("PRIVMSG %s :%s\r\n" % (meta["channel"],message))
 
 class Player:
     pass
@@ -104,7 +104,7 @@ def join_(*arg):
             print meta["user"], "has been added"
             Utils.say(meta["user"] + " has joined the game")
             players[meta["user"]] = Player()
-            meta["sock"].send("MODE %s +v %s\r\n" % (meta["data"].split(' ')[2],meta["user"]))
+            meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"],meta["user"]))
 
 def players_(*arg):
     Utils.respond(" ".join(players.keys()))
@@ -114,7 +114,7 @@ def changegame(state):
     if state == 1:
         for p in players.keys():
             if players[p].alive == 1:
-                meta["sock"].send("MODE %s +v %s\r\n" % (meta["data"].split(' ')[2],p))
+                meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"],p))
             elif players[p].alive == -1:
                 Utils.say("%s has died!" % p)
                 players[p].alive = 0
@@ -122,14 +122,15 @@ def changegame(state):
         Utils.say("It is now Day %d." % meta["cycle"])
     if state == 2:
         for p in players.keys():
-            meta["sock"].send("MODE %s -v %s\r\n" % (meta["data"].split(' ')[2],p))
+            meta["sock"].send("MODE %s -v %s\r\n" % (meta["channel"],p))
         Utils.say("It is now Night %d." % meta["cycle"])
 
 def endgame():
     meta["gamestate"] = 0
-    meta["sock"].send("MODE %s -m\r\n" % meta["data"].split(' ')[2])
+    meta["sock"].send("MODE %s -m\r\n" % meta["channel"])
     for p in players.keys():
-        meta["sock"].send("MDOE %s -v %s\r\n" % (meta["data"].split(' ')[2],p))
+        meta["sock"].send("MDOE %s -v %s\r\n" % (meta["channel"],p))
+    players = {}
 
 voters = set()
 min_voters = 2
@@ -145,7 +146,7 @@ def start_(*arg):
         else:
             Utils.say("Game is now starting!")
             Utils.say("Alerting players: %s" % " ".join(players.keys()))
-            meta["sock"].send("MODE %s +m\r\n" % meta["data"].split(' ')[2])
+            meta["sock"].send("MODE %s +m\r\n" % meta["channel"])
             playernames = players.keys()
             random.shuffle(playernames)
             # Send out role PMs
@@ -154,6 +155,8 @@ def start_(*arg):
                     players[p[1]].role = "Goon"
                     players[p[1]].alignment = "m"
                     Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
+                    Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
+                    Utils.notify_user(p[1], "You *must* choose someone to kill every night")
                 else:
                     players[p[1]].role = "Townie"
                     players[p[1]].role = "t"
@@ -200,13 +203,7 @@ while (1):
         if (meta["data"].split(' ')[1] == "PRIVMSG"):
             meta["user"] = Utils.get_username(meta["data"])
             meta["message"] = meta["data"][meta["data"].find(":", 1)+1:].rstrip().split(' ')
-            if meta["user"] in meta["blockquoters"]:
-                if meta["message"][0] == "quoteend":
-                    quote_(meta["blockquoters"][meta["user"]])
-                    del meta["blockquoters"][meta["user"]]
-                else:
-                    meta["blockquoters"][meta["user"]] += ' '.join(meta["message"])+'\n'
-            elif meta["message"][0].lower().startswith('!'):
+            if meta["message"][0].lower().startswith('!'):
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:

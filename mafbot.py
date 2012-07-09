@@ -28,7 +28,8 @@ class Utils:
         meta["sock"].send("PRIVMSG %s :%s\r\n" % (meta["channel"],message))
 
 class Player:
-    pass
+    target = ''
+    voters = set()
 
 pwfile = open('./nickserv_passwd')
 
@@ -109,13 +110,33 @@ def join_(*arg):
 def players_(*arg):
     Utils.respond(" ".join(players.keys()))
 
+def checkactions():
+    print "checking"
+    for p in players.keys():
+        if players[p].alive:
+            currenttarget = players[p].target
+            if currenttarget:
+                if players[p].role == "Goon":
+                    try:
+                        if players[currenttarget].alive == 1:
+                            players[currenttarget].alive = 0
+                        players[currenttarget].alive -= 1
+                    except:
+                        e = sys.exc_info()[0]
+                        Utils.say(e)
+            else:
+                print "failed at", p
+                return 0
+    print "done"
+    return 1
+
 def changegame(state):
     meta["gamestate"] = state
     if state == 1:
         for p in players.keys():
             if players[p].alive == 1:
                 meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"],p))
-            elif players[p].alive == -1:
+            elif players[p].alive < 0:
                 Utils.say("%s has died!" % p)
                 players[p].alive = 0
         meta["cycle"] += 1
@@ -159,20 +180,26 @@ def start_(*arg):
                     Utils.notify_user(p[1], "You *must* choose someone to kill every night")
                 else:
                     players[p[1]].role = "Townie"
-                    players[p[1]].role = "t"
+                    players[p[1]].alignment = "t"
                     Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
+                    players[p[1]].target = meta["botname"]
                 players[p[1]].alive = 1
             changegame(2)
 
+def votecount_(*arg):
+    for p in players.keys():
+        if len(players[p].voters):
+            Utils.say("%s: %s" % (p, ' '.join(players[p].voters)))
+
 def admineval(*arg):
-    if meta["user"] == "nisani":
-        Utils.say(eval(arg[0]))
+    #if meta["user"] == "nisani":
+    Utils.say(eval(' '.join(arg)))
 
 def adminexec(*arg):
     print "executing", arg[0]
-    exec arg[0]
+    exec ' '.join(list(arg))
 
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec}
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_}
 #COMMANDS
 ##########
 
@@ -204,6 +231,27 @@ while (1):
             meta["user"] = Utils.get_username(meta["data"])
             meta["message"] = meta["data"][meta["data"].find(":", 1)+1:].rstrip().split(' ')
             if meta["message"][0].lower().startswith('!'):
+                # Is the command an action?
+                if meta["gamestate"] == 2:
+                    if meta["message"][0][1:].lower() == 'kill':
+                        if players[meta["user"]].alignment == 'm':
+                            if meta["data"].split(' ')[4].rstrip().lower() in players.keys():
+                                players[meta["user"]].target = meta["data"].split(' ')[4].rstrip()
+                                meta["sock"].send("NOTICE %s :Action received!\r\n" % meta["user"])
+                                if checkactions():
+                                    changegame(1)
+                            else:
+                                meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
+                elif meta["gamestate"] == 1:
+                    if meta["message"][0][1:].lower() == 'vote':
+                        if meta["data"].split(' ')[2][0] == '#':
+                            try:
+                                player[meta["message"][1]].voters(add(meta["user"]))
+                            except:
+                                #Utils.say("player does not exist")
+                                e = sys.exc_info()[0]
+                                Utils.say(e)
+
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:

@@ -98,6 +98,7 @@ def info_(*arg):
         else:
             Utils.notify_user(meta["user"], "Invalid target \"%s\"." % who)
 def join_(*arg):
+    global players
     # only add them to the player list if there is not a current game going on
     if meta["gamestate"] == 0:
         if meta["user"] in players:
@@ -111,8 +112,19 @@ def join_(*arg):
 def players_(*arg):
     Utils.respond(" ".join(players.keys()))
 
+def alive(playerlist):
+    if len(playerlist):
+        p = playerlist[:].popitem()
+        if p[1].alive == 1:
+            return [p[0]] + alive(playerlist)
+        else:
+            return alive(playerlist)
+    else:
+        return []
+
+
 def checkactions():
-    print "checking"
+    print "checking actions"
     for p in players.keys():
         if players[p].alive:
             currenttarget = players[p].target
@@ -131,32 +143,73 @@ def checkactions():
     print "done"
     return 1
 
+def checkvotes():
+    print "checking votes"
+    print alive(players)
+    for p in alive(players):
+        # If the player has acquired simple majority
+        if len(players[p].voters) >= ceil(float(len(alive(players)))/2):
+            return p
+    return ''
+
 def changegame(state):
+    global players
+    print "changing game", state
     meta["gamestate"] = state
+    # First check for win conditions, but only if the game is in progress
+    if(state >= 0):
+        try:
+            scum = []
+            town = []
+            for p in alive(players):
+                if players[p].alignment == 'm':
+                    scum += [p]
+                else:
+                    town += [p]
+            if scumcount:
+                if len(scum) >= len(town):
+                    meta["gamestate"] = 0
+                    Utils.say("Mafia has won!")
+                    Utils.say("Congratulations to %s" % ' '.join(scum))
+            else:
+                meta["gamestate"] = 0
+                Utils.say("Town has won!")
+                Utils.say("Congratulations to %s" % ' '.join(town))
+        except:
+            Utils.say(sys.exc_info())
+
     if state == 1:
-        for p in players.keys():
-            if players[p].alive == 1:
-                playerstring = ' ' + p
-            elif players[p].alive < 0:
-                Utils.say("%s has died!" % p)
-                players[p].alive = 0
-        meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(playerstring.split(' '))-1),playerstring))
-        meta["cycle"] += 1
-        Utils.say("It is now Day %d." % meta["cycle"])
-    if state == 2:
+        print "going to day phase"
+        playerstring = ''
+        try:
+            for p in players.keys():
+                if players[p].alive == 1:
+                    playerstring += ' ' + p
+                elif players[p].alive < 0:
+                    Utils.say("%s has died!" % p)
+                    players[p].alive = 0
+            print playerstring
+            meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(playerstring.split(' '))-1),playerstring))
+            meta["cycle"] += 1
+            Utils.say("It is now Day %d." % meta["cycle"])
+        except:
+            Utils.say(sys.exc_info())
+    print "wat", state
+    if state == 2 or state == -1:
+        meta["gamestate"] = 2
         meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"],'v'*len(players),' '.join(players.keys())))
         Utils.say("It is now Night %d." % meta["cycle"])
-
-def endgame():
-    meta["gamestate"] = 0
-    meta["sock"].send("MODE %s -m\r\n" % meta["channel"])
-    meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"],'v'*len(players),' '.join(players.keys())))
-    players = {}
+    if state == 0:
+        print "ending game"
+        meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"], 'v'*len(players),' '.join(players.keys())))
+        meta["sock"].send("MDOE %s -m\r\n" % meta["channel"])
+        players = {}
 
 voters = set()
 min_voters = 2
 min_players = 4
 def start_(*arg):
+    global players
     if(len(players) < min_players):
         Utils.say("You need at least 5 players to start a game!")
     else:
@@ -184,7 +237,7 @@ def start_(*arg):
                     Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
                     players[p[1]].target = meta["botname"]
                 players[p[1]].alive = 1
-            changegame(2)
+            changegame(-1)
 
 def votecount_(*arg):
     for p in players.keys():
@@ -192,8 +245,9 @@ def votecount_(*arg):
             Utils.say("%s: %s" % (p, ' '.join(players[p].voters)))
 
 def admineval(*arg):
-    #if meta["user"] == "nisani":
-    Utils.say(eval(' '.join(arg)))
+    global players
+    if meta["user"] == "nisani":
+        Utils.say(eval(' '.join(arg)))
 
 def adminexec(*arg):
     print "executing", arg[0]
@@ -254,6 +308,15 @@ while (1):
                                     # Remove any previous vote the player made
                                     players[p].voters.discard(meta["user"])
                                 players[meta["message"][1]].voters.add(meta["user"])
+                                lynchtarget = checkvotes()
+                                if lynchtarget:
+                                    players[lynchtarget].alive = 0
+                                    Utils.say("%s has been lynched!" % lynchtarget)
+                                    Utils.say("Their role was %s" % players[lynchtarget].role)
+                                    changegame(2)
+
+                            except KeyError:
+                                Utils.say("Player does not exist!")
                             except:
                                 Utils.say(sys.exc_info())
 

@@ -7,6 +7,7 @@ import time
 import socket
 import urllib
 import random
+import math
 
 if (len(sys.argv) == 1):
     print("No server specified.")
@@ -113,15 +114,11 @@ def players_(*arg):
     Utils.respond(" ".join(players.keys()))
 
 def alive(playerlist):
-    if len(playerlist):
-        p = playerlist[:].popitem()
-        if p[1].alive == 1:
-            return [p[0]] + alive(playerlist)
-        else:
-            return alive(playerlist)
-    else:
-        return []
-
+    o = []
+    for p in playerlist.keys():
+        if playerlist[p].alive == 1:
+            o.append(p)
+    return o
 
 def checkactions():
     print "checking actions"
@@ -148,7 +145,8 @@ def checkvotes():
     print alive(players)
     for p in alive(players):
         # If the player has acquired simple majority
-        if len(players[p].voters) >= ceil(float(len(alive(players)))/2):
+        print p+"'s voters:", len(players[p].voters), "amount needed:",math.ceil(float(len(alive(players)))/2)
+        if len(players[p].voters) >= math.ceil(float(len(alive(players)))/2):
             return p
     return ''
 
@@ -166,19 +164,20 @@ def changegame(state):
                     scum += [p]
                 else:
                     town += [p]
-            if scumcount:
+            if scum:
                 if len(scum) >= len(town):
-                    meta["gamestate"] = 0
+                    state = 0
                     Utils.say("Mafia has won!")
                     Utils.say("Congratulations to %s" % ' '.join(scum))
             else:
-                meta["gamestate"] = 0
+                state = 0
                 Utils.say("Town has won!")
                 Utils.say("Congratulations to %s" % ' '.join(town))
         except:
             Utils.say(sys.exc_info())
 
     if state == 1:
+        meta["gamestate"] = 1
         print "going to day phase"
         playerstring = ''
         try:
@@ -188,21 +187,20 @@ def changegame(state):
                 elif players[p].alive < 0:
                     Utils.say("%s has died!" % p)
                     players[p].alive = 0
-            print playerstring
             meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(playerstring.split(' '))-1),playerstring))
             meta["cycle"] += 1
             Utils.say("It is now Day %d." % meta["cycle"])
         except:
             Utils.say(sys.exc_info())
-    print "wat", state
     if state == 2 or state == -1:
         meta["gamestate"] = 2
         meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"],'v'*len(players),' '.join(players.keys())))
         Utils.say("It is now Night %d." % meta["cycle"])
     if state == 0:
+        meta["gamestate"] = 0
         print "ending game"
         meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"], 'v'*len(players),' '.join(players.keys())))
-        meta["sock"].send("MDOE %s -m\r\n" % meta["channel"])
+        meta["sock"].send("MODE %s -m\r\n" % meta["channel"])
         players = {}
 
 voters = set()
@@ -293,7 +291,7 @@ while (1):
                     if meta["message"][0][1:].lower() == 'kill':
                         if players[meta["user"]].alignment == 'm':
                             if meta["data"].split(' ')[4].rstrip().lower() in players.keys():
-                                players[meta["user"]].target = meta["data"].split(' ')[4].rstrip()
+                                players[meta["user"]].target = meta["data"].split(' ')[4].rstrip().lower()
                                 meta["sock"].send("NOTICE %s :Action received!\r\n" % meta["user"])
                                 if checkactions():
                                     changegame(1)
@@ -302,7 +300,7 @@ while (1):
                 elif meta["gamestate"] == 1:
                     if meta["message"][0][1:].lower() == 'vote':
                         # Votes must be done in-channel-- no PMing
-                        if meta["data"].split(' ')[2][0] == '#':
+                        if meta["data"].split(' ')[2][0] == '#' and meta["user"] in alive(players):
                             try:
                                 for p in players.keys():
                                     # Remove any previous vote the player made
@@ -310,6 +308,7 @@ while (1):
                                 players[meta["message"][1]].voters.add(meta["user"])
                                 lynchtarget = checkvotes()
                                 if lynchtarget:
+                                    print "found lynch target"
                                     players[lynchtarget].alive = 0
                                     Utils.say("%s has been lynched!" % lynchtarget)
                                     Utils.say("Their role was %s" % players[lynchtarget].role)
@@ -318,7 +317,8 @@ while (1):
                             except KeyError:
                                 Utils.say("Player does not exist!")
                             except:
-                                Utils.say(sys.exc_info())
+                                #Utils.say(sys.exc_info())
+                                pass
 
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])

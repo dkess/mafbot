@@ -50,6 +50,7 @@ meta["channel"] = sys.argv[2]
 meta["blockquoters"] = {}
 meta["userinfo"] = {}
 meta["scumkp"] = 0
+meta["nightkills"] = set()
 
 pwfile.closed
 
@@ -136,21 +137,16 @@ def alive(playerlist):
 
 def checkactions():
     print "checking actions"
-    for p in players.keys():
-        if players[p].alive:
-            currenttarget = players[p].target
-            if currenttarget:
-                if players[p].role == "Goon":
-                    try:
-                        if players[currenttarget].alive == 1:
-                            players[currenttarget].alive = 0
-                        players[currenttarget].alive -= 1
-                    except:
-                        e = sys.exc_info()[0]
-                        Utils.say(e)
+    for p in alive(players):
+        if players[p].role == "Detective":
+            if players[p].target:
+                pass
             else:
-                print "failed at", p
+                print "no dt check"
                 return 0
+    if len(meta["nightkills"]) < meta["scumkp"]:
+        print "not enough kills"
+        return 0
     print "done"
     return 1
 
@@ -198,19 +194,25 @@ def changegame(state):
     if state == 1:
         meta["gamestate"] = 1
         print "going to day phase"
-        playerstring = ''
-        try:
-            for p in players.keys():
-                if players[p].alive == 1:
-                    playerstring += ' ' + p
-                elif players[p].alive < 0:
-                    Utils.say("%s has died!" % p)
-                    players[p].alive = 0
-            meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(playerstring.split(' '))-1),playerstring))
-            meta["cycle"] += 1
-            Utils.say("It is now Day %d." % meta["cycle"])
-        except:
-            Utils.say(sys.exc_info())
+        # Give the detective the result
+        for p in players:
+            if players[p].role == "Detective":
+                Utils.notify_user(p,"%s's role is %s" % (players[p].target, players[players[p].target].role))
+                players[p].target = ''
+        if meta["scumkp"] > 1:
+            playerstring = ''
+            for p in meta["nightkills"]:
+                playerstring += "%s the %s, " % (p, players[p].role)
+                players[p].alive = 0
+            meta["nightkills"] = set()
+            Utils.say("%shave died!" % playerstring)
+        else:
+            Utils.say("%s the %s has died!" % (p, players[p].role))
+            players[meta["nightkills"].pop()].alive = 0
+        print 10
+        meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(alive(players))),' '.join(alive(players))))
+        meta["cycle"] += 1
+        Utils.say("It is now Day %d." % meta["cycle"])
     if state == 2 or state == -1:
         if state == -1:
             meta["cycle"] = 0
@@ -219,6 +221,8 @@ def changegame(state):
         Utils.say("It is now Night %d." % meta["cycle"])
     if state == 0:
         meta["gamestate"] = 0
+        meta["scumkp"] = 0
+        meta["nightkills"] = set()
         print "ending game"
         meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"], 'v'*len(players),' '.join(players.keys())))
         meta["sock"].send("MODE %s -m\r\n" % meta["channel"])
@@ -265,7 +269,7 @@ def start_(*arg):
                     Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
                     if len(scum) > 1:
                         Utils.notify_user(p[1], "The first kills you or your teammates send in will be used-- discuss with your team first!")
-                        Utils.notify_user(p[1], "Your teamates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"])
+                        Utils.notify_user(p[1], "Your teammates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"]))
                     else:
                         Utils.notify_user(p[1], "You *must* choose someone to kill every night")
                 elif p[0] == 8:
@@ -320,7 +324,7 @@ def vote_(*arg):
                     Utils.say("Their role was %s" % players[lynchtarget].role)
                     changegame(2)
 
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "leave":leave_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_, "unvote": unvote_, "alive", alive_}
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "leave":leave_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_, "unvote": unvote_, "alive": alive_}
 #COMMANDS
 ##########
 
@@ -356,13 +360,19 @@ while (1):
                 if meta["gamestate"] == 2:
                     if meta["message"][0][1:].lower() == 'kill':
                         if players[meta["user"]].alignment == 'm':
-                            if meta["data"].split(' ')[4].rstrip().lower() in players.keys():
-                                players[meta["user"]].target = meta["data"].split(' ')[4].rstrip().lower()
-                                meta["sock"].send("NOTICE %s :Action received!\r\n" % meta["user"])
-                                if checkactions():
-                                    changegame(1)
+                            if meta["data"].split(' ')[4].rstrip().lower() in alive(players):
+                                meta["nightkills"].add(meta["data"].split(' ')[4].rstrip().lower())
+                                meta["sock"].send("NOTICE %s :Action received-- %d KP left!\r\n" % (meta["user"], meta["scumkp"] - len(meta["nightkills"])))
                             else:
                                 meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
+                    if players[meta["user"]].role == "Detective" and meta["message"][0][1:].lower() == 'check':
+                        if meta["message"][1].lower() in alive(players):
+                            players[meta["user"]].target = meta["message"][1].lower()
+                            meta["sock"].send("NOTICE %s :Action received!\r\n" % meta["user"])
+                        else:
+                            meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
+                    if checkactions():
+                        changegame(1)
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:

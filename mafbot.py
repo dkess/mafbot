@@ -49,6 +49,7 @@ meta["sock"]     = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 meta["channel"] = sys.argv[2]
 meta["blockquoters"] = {}
 meta["userinfo"] = {}
+meta["scumkp"] = 0
 
 pwfile.closed
 
@@ -118,7 +119,13 @@ def leave_(*arg):
         Utils.say("You can't leave unless you've joined!")
 
 def players_(*arg):
-    Utils.respond(" ".join(players.keys()))
+    if len(players):
+        Utils.respond(" ".join(players.keys()))
+
+def alive_(*arg):
+    o = len(alive(players))
+    if len(o):
+        Utils.respond(" ".join(o))
 
 def alive(playerlist):
     o = []
@@ -237,15 +244,35 @@ def start_(*arg):
             meta["sock"].send("MODE %s +m\r\n" % meta["channel"])
             playernames = players.keys()
             random.shuffle(playernames)
+            scum = []
+            try:
+                scum.append(playernames[0])
+                meta["scumkp"] += 1
+                scum.append(playernames[7])
+                if len(playernames) > 8:
+                    meta["scumkp"] += 1
+                scum.append(playernames[11])
+            except IndexError:
+                pass
+            print("Mafia:", scum)
             # Send out role PMs
-            for p in list(enumerate(playernames)):
-                if p[0] == 0:
+            playerlist = list(enumerate(playernames))
+            for p in playerlist:
+                if p[0] == 0 or p[0] == 7 or p[0] == 11:
                     players[p[1]].role = "Goon"
                     players[p[1]].alignment = "m"
                     Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
                     Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
-                    Utils.notify_user(p[1], "You *must* choose someone to kill every night")
-                    print p[1], "is the mafia"
+                    if len(scum) > 1:
+                        Utils.notify_user(p[1], "The first kills you or your teammates send in will be used-- discuss with your team first!")
+                        Utils.notify_user(p[1], "Your teamates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"])
+                    else:
+                        Utils.notify_user(p[1], "You *must* choose someone to kill every night")
+                elif p[0] == 8:
+                    players[p[1]].role = "Detective"
+                    players[p[1]].alignment = "t"
+                    Utils.notify_user(p[1], "You are a detective! Your goal is to eliminate the Mafia!")
+                    Utils.notify_user(p[1], "Each night you can investigate a player. You can check someone with /msg %s !check <playername>" % meta["botname"])
                 else:
                     players[p[1]].role = "Townie"
                     players[p[1]].alignment = "t"
@@ -272,23 +299,18 @@ def unvote_(*arg):
     for p in players.keys():
         players[p].voters.discard(meta["user"]) 
 
-def kill(target):
+def modkill(target):
     try:
         players[target].alive = 0
     except:
         pass
 
 def vote_(*arg):
-    print 1
     if meta["gamestate"] == 1:
-        print 2
         # Votes must be done in-channel-- no PMing
         if meta["data"].split(' ')[2][0] == '#' and meta["user"] in alive(players):
-            print 3
             unvote_(0)
-            print 4
-            if meta["message"][1] in alive(players):
-                print 5
+            if meta["message"][1].lower() in alive(players):
                 players[meta["message"][1]].voters.add(meta["user"])
                 lynchtarget = checkvotes()
                 if lynchtarget:
@@ -298,7 +320,7 @@ def vote_(*arg):
                     Utils.say("Their role was %s" % players[lynchtarget].role)
                     changegame(2)
 
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "leave":leave_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_, "unvote": unvote_}
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "leave":leave_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_, "unvote": unvote_, "alive", alive_}
 #COMMANDS
 ##########
 

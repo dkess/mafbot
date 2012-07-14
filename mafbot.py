@@ -110,6 +110,13 @@ def join_(*arg):
             players[meta["user"]] = Player()
             meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"],meta["user"]))
 
+def leave_(*arg):
+    global players
+    try:
+        del players[meta['user']]
+    except KeyError:
+        Utils.say("You can't leave unless you've joined!")
+
 def players_(*arg):
     Utils.respond(" ".join(players.keys()))
 
@@ -154,6 +161,11 @@ def changegame(state):
     global players
     print "changing game", state
     meta["gamestate"] = state
+    
+    # reset vote counts
+    for p in players:
+        players[p].voters = set()
+
     # First check for win conditions, but only if the game is in progress
     if(state >= 0):
         try:
@@ -168,11 +180,11 @@ def changegame(state):
                 if len(scum) >= len(town):
                     state = 0
                     Utils.say("Mafia has won!")
-                    Utils.say("Congratulations to %s" % ' '.join(scum))
+                    Utils.say("Congratulations to %s!" % ' '.join(scum))
             else:
                 state = 0
                 Utils.say("Town has won!")
-                Utils.say("Congratulations to %s" % ' '.join(town))
+                Utils.say("Congratulations to %s!" % ' and '.join(town))
         except:
             Utils.say(sys.exc_info())
 
@@ -193,6 +205,8 @@ def changegame(state):
         except:
             Utils.say(sys.exc_info())
     if state == 2 or state == -1:
+        if state == -1:
+            meta["cycle"] = 0
         meta["gamestate"] = 2
         meta["sock"].send("MODE %s -%s %s\r\n" % (meta["channel"],'v'*len(players),' '.join(players.keys())))
         Utils.say("It is now Night %d." % meta["cycle"])
@@ -208,14 +222,16 @@ min_voters = 2
 min_players = 4
 def start_(*arg):
     global players
+    global voters
     if(len(players) < min_players):
-        Utils.say("You need at least 5 players to start a game!")
+        Utils.say("You need at least 6 players to start a game!")
     else:
         voters.add(meta["user"])
         if len(voters) < min_voters:
             voters.add(meta["user"])
             Utils.say("%s wants to start, need %d more people" % (meta["user"],min_voters - len(voters)))
         else:
+            voters = set()
             Utils.say("Game is now starting!")
             Utils.say("Alerting players: %s" % " ".join(players.keys()))
             meta["sock"].send("MODE %s +m\r\n" % meta["channel"])
@@ -229,6 +245,7 @@ def start_(*arg):
                     Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
                     Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
                     Utils.notify_user(p[1], "You *must* choose someone to kill every night")
+                    print p[1], "is the mafia"
                 else:
                     players[p[1]].role = "Townie"
                     players[p[1]].alignment = "t"
@@ -249,12 +266,39 @@ def admineval(*arg):
 
 def adminexec(*arg):
     print "executing", arg[0]
-    exec ' '.join(list(arg))
+    #exec ' '.join(list(arg))
+
+def unvote_(*arg):
+    for p in players.keys():
+        players[p].voters.discard(meta["user"]) 
+
+def kill(target):
+    try:
+        players[target].alive = 0
+    except:
+        pass
 
 def vote_(*arg):
-    pass
+    print 1
+    if meta["gamestate"] == 1:
+        print 2
+        # Votes must be done in-channel-- no PMing
+        if meta["data"].split(' ')[2][0] == '#' and meta["user"] in alive(players):
+            print 3
+            unvote_(0)
+            print 4
+            if meta["message"][1] in alive(players):
+                print 5
+                players[meta["message"][1]].voters.add(meta["user"])
+                lynchtarget = checkvotes()
+                if lynchtarget:
+                    print "found lynch target"
+                    players[lynchtarget].alive = 0
+                    Utils.say("%s has been lynched!" % lynchtarget)
+                    Utils.say("Their role was %s" % players[lynchtarget].role)
+                    changegame(2)
 
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_}
+commands = {"add":add_, "help":help_, "info":info_, "join":join_, "leave":leave_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_, "unvote": unvote_}
 #COMMANDS
 ##########
 
@@ -297,29 +341,6 @@ while (1):
                                     changegame(1)
                             else:
                                 meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
-                elif meta["gamestate"] == 1:
-                    if meta["message"][0][1:].lower() == 'vote':
-                        # Votes must be done in-channel-- no PMing
-                        if meta["data"].split(' ')[2][0] == '#' and meta["user"] in alive(players):
-                            try:
-                                for p in players.keys():
-                                    # Remove any previous vote the player made
-                                    players[p].voters.discard(meta["user"])
-                                players[meta["message"][1]].voters.add(meta["user"])
-                                lynchtarget = checkvotes()
-                                if lynchtarget:
-                                    print "found lynch target"
-                                    players[lynchtarget].alive = 0
-                                    Utils.say("%s has been lynched!" % lynchtarget)
-                                    Utils.say("Their role was %s" % players[lynchtarget].role)
-                                    changegame(2)
-
-                            except KeyError:
-                                Utils.say("Player does not exist!")
-                            except:
-                                #Utils.say(sys.exc_info())
-                                pass
-
                 try:
                     commands[meta["message"][0][1:].lower()](*meta["message"][1:])
                 except KeyError:
@@ -328,11 +349,17 @@ while (1):
         if (meta["data"].split(' ')[1] == "NICK"):
             print "detected nick change"
             try:
-                players.remove(Utils.get_username(meta["data"]))
-                print "adding player"
-                players.add(meta["data"].split(' ')[2][1:])
+                players[meta["data"].split(' ')[2][1:]] = players[Utils.get_username(meta["data"])]
+                del players[Utils.get_username(meta["data"])]
             # If the player isn't in the playerlist, do nothing
             except KeyError:
-                Utils.say("player not in game")
+                pass
+        # if someone leaves the channel
+        if meta["data"].split(' ')[1] == "PART":
+            try:
+                del players[Utils.get_username(meta["data"])]
+                print "deleted %s from the playerlist for leaving the channel" % Utils.get_username(meta["data"])
+            except KeyError:
+                pass
     except:
         pass

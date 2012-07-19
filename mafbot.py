@@ -8,6 +8,7 @@ import socket
 import urllib
 import random
 import math
+import traceback
 
 if (len(sys.argv) == 1):
     print("No server specified.")
@@ -34,7 +35,6 @@ class Player:
         self.voters = set()
 
 pwfile = open('./nickserv_passwd')
-
 
 meta = {}
 meta["botname"]  = "MafBot"
@@ -124,7 +124,7 @@ def players_(*arg):
         Utils.respond(" ".join(players.keys()))
 
 def alive_(*arg):
-    o = len(alive(players))
+    o = alive(players)
     if len(o):
         Utils.respond(" ".join(o))
 
@@ -199,7 +199,7 @@ def changegame(state):
             if players[p].role == "Detective":
                 Utils.notify_user(p,"%s's role is %s" % (players[p].target, players[players[p].target].role))
                 players[p].target = ''
-        if meta["scumkp"] > 1:
+        if len(meta["nightkills"]) > 1:
             playerstring = ''
             for p in meta["nightkills"]:
                 playerstring += "%s the %s, " % (p, players[p].role)
@@ -207,10 +207,10 @@ def changegame(state):
             meta["nightkills"] = set()
             Utils.say("%shave died!" % playerstring)
         else:
-            Utils.say("%s the %s has died!" % (p, players[p].role))
-            players[meta["nightkills"].pop()].alive = 0
-        print 10
-        meta["sock"].send("MODE %s +%s%s\r\n" % (meta["channel"],'v'*(len(alive(players))),' '.join(alive(players))))
+            target = meta["nightkills"].pop()
+            Utils.say("%s the %s has died!" % (target, players[target].role))
+            players[target].alive = 0
+        meta["sock"].send("MODE %s +%s %s\r\n" % (meta["channel"],'v'*(len(alive(players))),' '.join(alive(players))))
         meta["cycle"] += 1
         Utils.say("It is now Day %d." % meta["cycle"])
     if state == 2 or state == -1:
@@ -315,7 +315,7 @@ def vote_(*arg):
         if meta["data"].split(' ')[2][0] == '#' and meta["user"] in alive(players):
             unvote_(0)
             if meta["message"][1].lower() in alive(players):
-                players[meta["message"][1]].voters.add(meta["user"])
+                players[meta["message"][1].lower()].voters.add(meta["user"])
                 lynchtarget = checkvotes()
                 if lynchtarget:
                     print "found lynch target"
@@ -360,7 +360,7 @@ while (1):
                 if meta["gamestate"] == 2:
                     if meta["message"][0][1:].lower() == 'kill':
                         if players[meta["user"]].alignment == 'm':
-                            if meta["data"].split(' ')[4].rstrip().lower() in alive(players):
+                            if meta["message"][1].lower() in alive(players) and players[meta["message"][1].lower()].alignment != 'm':
                                 meta["nightkills"].add(meta["data"].split(' ')[4].rstrip().lower())
                                 meta["sock"].send("NOTICE %s :Action received-- %d KP left!\r\n" % (meta["user"], meta["scumkp"] - len(meta["nightkills"])))
                             else:
@@ -380,9 +380,24 @@ while (1):
         # if a user changes nick
         if (meta["data"].split(' ')[1] == "NICK"):
             print "detected nick change"
+            oldnick = Utils.get_username(meta["data"])
+            newnick = meta["data"].split(' ')[2][1:].rstrip()
             try:
-                players[meta["data"].split(' ')[2][1:]] = players[Utils.get_username(meta["data"])]
-                del players[Utils.get_username(meta["data"])]
+                del players[oldnick]
+                players[newnick] = players[oldnick]
+                for p in players:
+                    if players[p].target == oldnick:
+                        players[p].target = newnick
+                    try:
+                        players[p].remove(oldnick)
+                        players[p].add(newnick)
+                    except KeyError:
+                        pass
+                try:
+                    meta["nightkills"].remove(oldnick)
+                    meta["nightkills"].add(newnick)
+                except KeyError:
+                    pass
             # If the player isn't in the playerlist, do nothing
             except KeyError:
                 pass
@@ -394,4 +409,5 @@ while (1):
             except KeyError:
                 pass
     except:
-        pass
+        print(sys.exc_info)
+        traceback.print_stack()

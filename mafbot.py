@@ -20,7 +20,7 @@ class Utils:
         return message[1:message.find("!")].lower()
     @classmethod
     def notify_user(cls, user, message):
-        meta["sock"].send("NOTICE %s :%s\r\n" % (user, message))
+        meta["sock"].send("PRIVMSG %s :%s\r\n" % (user, message))
     @classmethod
     def respond(cls, message):
         meta["sock"].send("PRIVMSG %s :%s: %s\r\n" % (meta["data"].split(' ')[2], meta["user"], message))

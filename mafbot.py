@@ -23,7 +23,7 @@ class Utils:
         meta["sock"].send("PRIVMSG %s :%s\r\n" % (user, message))
     @classmethod
     def respond(cls, message):
-        meta["sock"].send("PRIVMSG %s :%s: %s\r\n" % (meta["data"].split(' ')[2], meta["user"], message))
+        meta["sock"].send("PRIVMSG %s :%s\r\n" % (meta["data"].split(' ')[2], message))
         print("Said: \"%s\"" % message)
     @classmethod
     def say(cls, message):
@@ -72,13 +72,6 @@ for user in [f for f in os.listdir("./") if os.path.isfile(os.path.join("./", f)
 
 ##########
 #COMMANDS
-def add_(*arg):
-    if len(arg) >= 1:
-        info = ' '.join(arg)
-        f = open("./%s.user" % meta["user"].lower(), 'w')
-        f.write(info)
-        f.close()
-        meta["userinfo"][meta["user"].lower()] = info
 def help_(*arg):
     if len(arg) == 0:
         Utils.respond("Commands: %s" % ', '.join([x for x in commands]))
@@ -93,40 +86,21 @@ def help_(*arg):
         Utils.notify_user(meta["user"], "Command `info <user>`: Displays personal info for <user>.")
     if target == "join":
         Utils.notify_user(meta["user"], "Command `join <#channel> [#channel] [#channel]...`: Tells %s to join all of the listed channels.")
-def info_(*arg):
-    if len(arg) != 0:
-        who = arg[0].lower()
-        if (who in meta["userinfo"]):
-            Utils.notify_user(meta["user"], "%s: %s" % (who, meta["userinfo"][who]))
-        else:
-            Utils.notify_user(meta["user"], "Invalid target \"%s\"." % who)
-def join_(*arg):
+
+def addvoice(target):
+    if type(target) is list:
+        meta["sock"].send("MODE %s +%s %s\r\n" % (meta["channel"],'v'*(len(target)),' '.join(target)))
+    elif type(target) is str:
+        meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"], target))
+
+def joingame(user):
     global players
-    # only add them to the player list if there is not a current game going on
-    if meta["gamestate"] == 0:
-        if meta["user"] in players:
-            Utils.say(meta["user"] + ", you are already in the game!")
-        else:
-            print meta["user"], "has been added"
-            Utils.say(meta["user"] + " has joined the game")
-            players[meta["user"]] = Player()
-            meta["sock"].send("MODE %s +v %s\r\n" % (meta["channel"],meta["user"]))
-
-def leave_(*arg):
-    global players
-    try:
-        del players[meta['user']]
-    except KeyError:
-        Utils.say("You can't leave unless you've joined!")
-
-def players_(*arg):
-    if len(players):
-        Utils.respond(" ".join(players.keys()))
-
-def alive_(*arg):
-    o = alive(players)
-    if len(o):
-        Utils.respond(" ".join(o))
+    if user in players:
+        return False
+    else:
+        players[user] = Player()
+        addvoice(user)
+        return True
 
 def alive(playerlist):
     o = []
@@ -171,25 +145,24 @@ def changegame(state):
 
     # First check for win conditions, but only if the game is in progress
     if(state >= 0):
-        try:
-            scum = []
-            town = []
-            for p in alive(players):
-                if players[p].alignment == 'm':
-                    scum += [p]
-                else:
-                    town += [p]
-            if scum:
-                if len(scum) >= len(town):
-                    state = 0
-                    Utils.say("Mafia has won!")
-                    Utils.say("Congratulations to %s!" % ' '.join(scum))
+        scum = []
+        town = []
+        for p in alive(players):
+            if players[p].alignment == 'm':
+                scum += [p]
             else:
+                town += [p]
+        if scum:
+            if len(scum) >= len(town):
                 state = 0
-                Utils.say("Town has won!")
-                Utils.say("Congratulations to %s!" % ' and '.join(town))
-        except:
-            Utils.say(sys.exc_info())
+                Utils.say("Mafia has won!")
+                Utils.say("Congratulations to %s!" % ' '.join(scum))
+            if scum == 1:
+                meta["scumkp"] = 1
+        else:
+            state = 0
+            Utils.say("Town has won!")
+            Utils.say("Congratulations to %s!" % ' and '.join(town))
 
     if state == 1:
         meta["gamestate"] = 1
@@ -212,7 +185,7 @@ def changegame(state):
             players[target].alive = 0
         meta["sock"].send("MODE %s +%s %s\r\n" % (meta["channel"],'v'*(len(alive(players))),' '.join(alive(players))))
         meta["cycle"] += 1
-        Utils.say("It is now Day %d." % meta["cycle"])
+        Utils.say("It is now Day %d. With %d players it is %d to lynch." % (meta["cycle"], len(alive(players)),math.ceil(float(len(alive(players))))))
     if state == 2 or state == -1:
         if state == -1:
             meta["cycle"] = 0
@@ -231,100 +204,82 @@ def changegame(state):
 voters = set()
 min_voters = 2
 min_players = 4
-def start_(*arg):
+def startgame(*arg):
     global players
     global voters
-    if(len(players) < min_players):
-        Utils.say("You need at least 6 players to start a game!")
-    else:
-        voters.add(meta["user"])
-        if len(voters) < min_voters:
-            voters.add(meta["user"])
-            Utils.say("%s wants to start, need %d more people" % (meta["user"],min_voters - len(voters)))
+    voters = set()
+    Utils.say("Game is now starting!")
+    Utils.say("Alerting players: %s" % " ".join(players.keys()))
+    meta["sock"].send("MODE %s +m\r\n" % meta["channel"])
+    playernames = players.keys()
+    random.shuffle(playernames)
+    scum = []
+    try:
+        scum.append(playernames[0])
+        meta["scumkp"] += 1
+        scum.append(playernames[7])
+        if len(playernames) > 8:
+            meta["scumkp"] += 1
+        scum.append(playernames[11])
+    except IndexError:
+        pass
+    print("Mafia:", scum)
+    # Send out role PMs
+    playerlist = list(enumerate(playernames))
+    for p in playerlist:
+        if p[0] == 0 or p[0] == 7 or p[0] == 11:
+            players[p[1]].role = "Goon"
+            players[p[1]].alignment = "m"
+            Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
+            Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
+            if len(scum) > 1:
+                Utils.notify_user(p[1], "The first kills you or your teammates send in will be used-- discuss with your team first!")
+                Utils.notify_user(p[1], "Your teammates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"]))
+            else:
+                Utils.notify_user(p[1], "You *must* choose someone to kill every night")
+        elif p[0] == 8:
+            players[p[1]].role = "Detective"
+            players[p[1]].alignment = "t"
+            Utils.notify_user(p[1], "You are a detective! Your goal is to eliminate the Mafia!")
+            Utils.notify_user(p[1], "Each night you can investigate a player. You can check someone with /msg %s !check <playername>" % meta["botname"])
         else:
-            voters = set()
-            Utils.say("Game is now starting!")
-            Utils.say("Alerting players: %s" % " ".join(players.keys()))
-            meta["sock"].send("MODE %s +m\r\n" % meta["channel"])
-            playernames = players.keys()
-            random.shuffle(playernames)
-            scum = []
-            try:
-                scum.append(playernames[0])
-                meta["scumkp"] += 1
-                scum.append(playernames[7])
-                if len(playernames) > 8:
-                    meta["scumkp"] += 1
-                scum.append(playernames[11])
-            except IndexError:
-                pass
-            print("Mafia:", scum)
-            # Send out role PMs
-            playerlist = list(enumerate(playernames))
-            for p in playerlist:
-                if p[0] == 0 or p[0] == 7 or p[0] == 11:
-                    players[p[1]].role = "Goon"
-                    players[p[1]].alignment = "m"
-                    Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
-                    Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
-                    if len(scum) > 1:
-                        Utils.notify_user(p[1], "The first kills you or your teammates send in will be used-- discuss with your team first!")
-                        Utils.notify_user(p[1], "Your teammates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"]))
-                    else:
-                        Utils.notify_user(p[1], "You *must* choose someone to kill every night")
-                elif p[0] == 8:
-                    players[p[1]].role = "Detective"
-                    players[p[1]].alignment = "t"
-                    Utils.notify_user(p[1], "You are a detective! Your goal is to eliminate the Mafia!")
-                    Utils.notify_user(p[1], "Each night you can investigate a player. You can check someone with /msg %s !check <playername>" % meta["botname"])
-                else:
-                    players[p[1]].role = "Townie"
-                    players[p[1]].alignment = "t"
-                    Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
-                    players[p[1]].target = meta["botname"]
-                players[p[1]].alive = 1
-            changegame(-1)
+            players[p[1]].role = "Townie"
+            players[p[1]].alignment = "t"
+            Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
+            players[p[1]].target = meta["botname"]
+        players[p[1]].alive = 1
+    changegame(-1)
 
-def votecount_(*arg):
+def votecount():
     for p in players.keys():
         if len(players[p].voters):
-            Utils.say("%s: %s" % (p, ' '.join(players[p].voters)))
-
-def admineval(*arg):
-    global players
-    if meta["user"] == "nisani":
-        Utils.say(eval(' '.join(arg)))
-
-def adminexec(*arg):
-    print "executing", arg[0]
-    #exec ' '.join(list(arg))
-
-def unvote_(*arg):
-    for p in players.keys():
-        players[p].voters.discard(meta["user"]) 
+            Utils.respond("%s: %s" % (p, ' '.join(players[p].voters)))
 
 def modkill(target):
     try:
         players[target].alive = 0
+        randomnumber = randint(0,2)
+        if randomnumber == 0:
+            Utils.say("%s has been struck by lightning!", target)
+        elif randomnumber == 1:
+            Utils.say("%s was attacked by bears!", target)
+        elif randomnumber == 2:
+            Utils.say("God came down and smit %s! Atheists: 0 Theists: 1", target)
     except:
         pass
 
-def vote_(*arg):
-    if meta["gamestate"] == 1:
-        # Votes must be done in-channel-- no PMing
-        if meta["data"].split(' ')[2][0] == '#' and meta["user"] in alive(players):
-            unvote_(0)
-            if meta["message"][1].lower() in alive(players):
-                players[meta["message"][1].lower()].voters.add(meta["user"])
-                lynchtarget = checkvotes()
-                if lynchtarget:
-                    print "found lynch target"
-                    players[lynchtarget].alive = 0
-                    Utils.say("%s has been lynched!" % lynchtarget)
-                    Utils.say("Their role was %s" % players[lynchtarget].role)
-                    changegame(2)
+def unvote(voter):
+    for p in players.keys():
+        players[p].voters.discard(voter)
 
-commands = {"add":add_, "help":help_, "info":info_, "join":join_, "leave":leave_, "players": players_, "start": start_, "eval": admineval, "exec": adminexec, "votecount": votecount_, "vote": vote_, "unvote": unvote_, "alive": alive_}
+def addvote(voter, votee):
+    unvote(voter)
+    if votee in alive(players):
+        players[votee].voters.add(voter)
+        return 1
+    else:
+        return 0
+
 #COMMANDS
 ##########
 
@@ -351,32 +306,80 @@ while (1):
         if (meta["data"].split(' ')[1] == "001"):
             meta["sock"].send("MODE "+meta["botname"]+" +B\r\n"+''.join(["JOIN %s\r\n" % meta["channel"]]))
             meta["sock"].send("PRIVMSG nickserv :identify %s\r\n" % meta["passwd"])
-        #If receiving PRIVMSG from a user
+        #If a message is received
         if (meta["data"].split(' ')[1] == "PRIVMSG"):
             meta["user"] = Utils.get_username(meta["data"])
+            user = Utils.get_username(meta["data"])
             meta["message"] = meta["data"][meta["data"].find(":", 1)+1:].rstrip().split(' ')
-            if meta["message"][0].lower().startswith('!'):
-                # Is the command an action?
-                if meta["gamestate"] == 2:
-                    if meta["message"][0][1:].lower() == 'kill':
-                        if players[meta["user"]].alignment == 'm':
-                            if meta["message"][1].lower() in alive(players) and players[meta["message"][1].lower()].alignment != 'm':
-                                meta["nightkills"].add(meta["data"].split(' ')[4].rstrip().lower())
-                                meta["sock"].send("NOTICE %s :Action received-- %d KP left!\r\n" % (meta["user"], meta["scumkp"] - len(meta["nightkills"])))
-                            else:
-                                meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
-                    if players[meta["user"]].role == "Detective" and meta["message"][0][1:].lower() == 'check':
-                        if meta["message"][1].lower() in alive(players):
-                            players[meta["user"]].target = meta["message"][1].lower()
-                            meta["sock"].send("NOTICE %s :Action received!\r\n" % meta["user"])
+            message = meta["data"][meta["data"].find(":", 1)+1:].rstrip().split(' ')
+            # Commands that can be sent in-channel or in a private message
+            # !alive tells who is alive, !players shows all players including dead ones
+            # Result is always sent as a private message to prevent everyone from being hilighted
+            if message[0] == '!alive' and meta["gamestate"] != 0 and len(alive(players)):
+                Utils.notify_user(user," ".join(alive(players)))
+            if message[0] == '!players' and len(players):
+                Utils.notify_user(user," ".join(players))
+            if message[0] == '!votecount':
+                votecount()
+            if message[0] == '!eval' and user == "nisani":
+                Utils.say(eval(' '.join(message[1:])))
+            
+            # Commands that can only be sent in channel
+            if meta["data"].split(' ')[2] == meta["channel"]:
+                if message[0] == '!join' and meta["gamestate"] == 0:
+                    if joingame(user):
+                        Utils.say(user + " has joined the game!")
+                    else:
+                        Utils.say(user + ", you are already in the game!")
+                if message[0] == '!leave' and meta["gamestate"] == 0:
+                    try:
+                        del players[user]
+                    except KeyError:
+                        Utils.say("You can't leave unless you've joined!")
+                
+                elif message[0] == '!start' and meta["gamestate"] == 0:
+                    if len(players) < 6:
+                        Utils.say("You need at least 6 players to start a game!")
+                    else:
+                        voters.add(user)
+                        if len(voters) <  min_voters:
+                            Utils.say("%s wants to start, need %d more people" % (user,min_voters - len(voters)))
                         else:
-                            meta["sock"].send("NOTICE %s :That player does not exist!\r\n" % meta["user"])
+                            startgame()
+
+                elif message[0] == '!vote' and meta["gamestate"] == 1 and players[user].alive:
+                    if addvote(user, message[1].lower()):
+                        lynchtarget = checkvotes()
+                        if lynchtarget:
+                            print lynchtarget, " to be lynched"
+                            players[lynchtarget].alive = 0
+                            Utils.say("%s has been lynched!" % lynchtarget)
+                            Utils.say("Their rolse was %s." % players[lynchtarget].role)
+                            changegame(2)
+                    else:
+                        Utils.say("That player is not in the game!")
+
+                elif message[0] == '!unvote' and meta["gamestate"] == 1:
+                    unvote(user)
+            else:
+                # Commands that can only be sent through PMs (night actions)
+                if meta["gamestate"] == 2:
+                    if message[0].lower() == '!kill' and players[user].alignment == 'm' and players[user].alive:
+                        if message[1].lower() in alive(players) and players[message[1].lower()].alignment != 'm':
+                            meta["nightkills"].add(message[1].lower())
+                            Utils.notify_user(user,"Action received-- %d KP left!" % (meta["scumkp"] - len(meta["nightkills"])))
+                        else:
+                            Utils.notify_user(user,"Invalid target!")
+                
+                    elif message[0].lower() == '!check' and players[user].role == "Detective":
+                        if message[1].lower() in alive(players) and message[1].lower() != user:
+                            players[user].target = message[1].lower()
+                            Utils.notify_user(user,"Action received!")
+                        else:
+                            Utils.notify_user(user,"Invalid target!")
                     if checkactions():
                         changegame(1)
-                try:
-                    commands[meta["message"][0][1:].lower()](*meta["message"][1:])
-                except KeyError:
-                    pass
+
         # if a user changes nick
         if (meta["data"].split(' ')[1] == "NICK"):
             print "detected nick change"
@@ -409,5 +412,5 @@ while (1):
             except KeyError:
                 pass
     except:
-        print(sys.exc_info)
+        print(sys.exc_info())
         traceback.print_stack()

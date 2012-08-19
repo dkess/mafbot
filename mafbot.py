@@ -43,11 +43,9 @@ meta["passwd"]   = pwfile.read()
 meta["data"]     = ""
 meta["message"]  = ""
 meta["user"]     = ""
-meta["quotedburl"] = "http://awfulnet.org/quotes/index.php"
 meta["server"]   = sys.argv[1]
 meta["sock"]     = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 meta["channel"] = sys.argv[2]
-meta["blockquoters"] = {}
 meta["userinfo"] = {}
 meta["scumkp"] = 0
 meta["nightkills"] = set()
@@ -134,6 +132,21 @@ def checkvotes():
             return p
     return ''
 
+def replace(oldnick,newnick):
+    try:
+        players[newnick] = players[oldnick]
+        del players[oldnick]
+        for p in players:
+            if players[p].target == oldnick:
+                players[p].target == newnick
+        try:
+            meta["nightkills"].discard(oldnick)
+            meta["nightkills"].add(newnick)
+        except KeyError:
+            pass
+    except KeyError:
+        pass
+
 def changegame(state):
     global players
     print "changing game", state
@@ -201,6 +214,37 @@ def changegame(state):
         meta["sock"].send("MODE %s -m\r\n" % meta["channel"])
         players = {}
 
+def sendrolepm(p):
+    global players
+    print 1
+    if players[p].alignment == "m":
+        print 2
+        Utils.notify_user(p, "You are a Mafia goon! Your goal is to outnumber the town.")
+        print 3
+        Utils.notify_user(p, "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
+        print 4
+        scum = []
+        for r in players:
+            if players[r].alignment == 'm':
+                scum.append(r)
+        print 5
+        if len(scum) > 1:
+            print 6
+            Utils.notify_user(p, "The first kills you or your teammates send in will be used-- discuss with your team first!")
+            Utils.notify_user(p, "Your teammates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"]))
+            print 7
+        else:
+            print 8
+            Utils.notify_user(p, "You *must* choose someone to kill every night")
+    elif players[p].role == 'Detective':
+        print 9
+        Utils.notify_user(p, "You are a detective! Your goal is to eliminate the Mafia!")
+        Utils.notify_user(p, "Each night you can investigate a player. You can check someone with /msg %s !check <playername>" % meta["botname"])
+        print 10
+    elif players[p].role == 'Townie':
+        print 11
+        Utils.notify_user(p, "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
+
 voters = set()
 min_voters = 2
 min_players = 4
@@ -230,24 +274,16 @@ def startgame(*arg):
         if p[0] == 0 or p[0] == 7 or p[0] == 11:
             players[p[1]].role = "Goon"
             players[p[1]].alignment = "m"
-            Utils.notify_user(p[1], "You are a Mafia goon! Your goal is to outnumber the town.")
-            Utils.notify_user(p[1], "To kill (during the night), PM %s with !kill <target>" % meta["botname"])
-            if len(scum) > 1:
-                Utils.notify_user(p[1], "The first kills you or your teammates send in will be used-- discuss with your team first!")
-                Utils.notify_user(p[1], "Your teammates are %s and you have %d killing power per night." % (' '.join(scum), meta["scumkp"]))
-            else:
-                Utils.notify_user(p[1], "You *must* choose someone to kill every night")
         elif p[0] == 8:
             players[p[1]].role = "Detective"
             players[p[1]].alignment = "t"
-            Utils.notify_user(p[1], "You are a detective! Your goal is to eliminate the Mafia!")
-            Utils.notify_user(p[1], "Each night you can investigate a player. You can check someone with /msg %s !check <playername>" % meta["botname"])
         else:
             players[p[1]].role = "Townie"
             players[p[1]].alignment = "t"
-            Utils.notify_user(p[1], "You are a vanilla Townie! Your goal is to eliminate the Mafia!")
             players[p[1]].target = meta["botname"]
+        print "done"
         players[p[1]].alive = 1
+    map(sendrolepm,players)
     changegame(-1)
 
 def votecount():
@@ -323,6 +359,14 @@ while (1):
                 votecount()
             if message[0] == '!eval' and user == "nisani":
                 Utils.say(eval(' '.join(message[1:])))
+
+            elif message[0] == '!replace':
+                try:
+                    if players[message[1].lower()].missing:
+                        replace(message[1].lower(),user)
+                        sendrolepm(user)
+                except KeyError:
+                    pass
             
             # Commands that can only be sent in channel
             if meta["data"].split(' ')[2] == meta["channel"]:
@@ -354,7 +398,7 @@ while (1):
                             print lynchtarget, " to be lynched"
                             players[lynchtarget].alive = 0
                             Utils.say("%s has been lynched!" % lynchtarget)
-                            Utils.say("Their rolse was %s." % players[lynchtarget].role)
+                            Utils.say("Their role was %s." % players[lynchtarget].role)
                             changegame(2)
                     else:
                         Utils.say("That player is not in the game!")
@@ -385,32 +429,34 @@ while (1):
             print "detected nick change"
             oldnick = Utils.get_username(meta["data"])
             newnick = meta["data"].split(' ')[2][1:].rstrip()
-            try:
-                del players[oldnick]
-                players[newnick] = players[oldnick]
-                for p in players:
-                    if players[p].target == oldnick:
-                        players[p].target = newnick
-                    try:
-                        players[p].remove(oldnick)
-                        players[p].add(newnick)
-                    except KeyError:
-                        pass
-                try:
-                    meta["nightkills"].remove(oldnick)
-                    meta["nightkills"].add(newnick)
-                except KeyError:
-                    pass
-            # If the player isn't in the playerlist, do nothing
-            except KeyError:
-                pass
+            replace(Utils.get_username(meta["data"]),meta["data"].split(' ')[2][1:].rstrip().lower())
         # if someone leaves the channel
         if meta["data"].split(' ')[1] == "PART":
+            user = Utils.get_username(meta["data"])
+            if meta["gamestate"] != 0:
+                try:
+                    if players[user].alive != 0:
+                        Utils.say("%s has left the game! PM me with !replace %s to replace them." % (user,user))
+                        Utils.say("Or wait for them to come back.")
+                        players[user].missing = 1
+                except KeyError:
+                    pass
+            else:
+                try:
+                    del players[user]
+                except KeyError:
+                    pass
+
+        # if someone joins the channel, and that person left
+        if meta["data"].split(' ')[1] == "JOIN":
+            user = Utils.get_username(meta["data"])
             try:
-                del players[Utils.get_username(meta["data"])]
-                print "deleted %s from the playerlist for leaving the channel" % Utils.get_username(meta["data"])
+                if players[user].missing:
+                    players[user].missing = 0
+                    Utils.say("%s has rejoined!" % user)
             except KeyError:
                 pass
+
     except:
         print(sys.exc_info())
         traceback.print_stack()
